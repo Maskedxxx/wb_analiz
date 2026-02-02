@@ -25,3 +25,6 @@ logs/
 
 # macOS
 .DS_Store
+
+# Legacy
+legacy_v1/

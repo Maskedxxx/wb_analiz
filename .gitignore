@@ -1,0 +1,27 @@
+# Секреты
+.env
+nemov_token.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Данные
+*.csv
+reports/
+feedback/
+logs/
+
+# IDE
+.idea/
+.vscode/
+*.swp
+
+# Jupyter
+.ipynb_checkpoints/
+
+# macOS
+.DS_Store

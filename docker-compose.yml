@@ -1,0 +1,16 @@
+services:
+  bot:
+    build: .
+    env_file: .env
+    volumes:
+      # Токен WB API
+      - ./nemov_token.txt:/app/nemov_token.txt:ro
+      # Сохранение фидбека между перезапусками
+      - ./feedback:/app/feedback
+      # Сохранение отчётов
+      - ./reports:/app/reports
+    restart: unless-stopped
+    environment:
+      - WB_TOKEN_FILE=/app/nemov_token.txt
+      - FEEDBACK_DIR=/app/feedback
+      - REPORTS_DIR=/app/reports

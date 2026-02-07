@@ -15,7 +15,7 @@ REPORTS_DIR = os.getenv('REPORTS_DIR', '/app/reports')
 LOGS_DIR = os.getenv('LOGS_DIR', '/app/logs')
 
 # Расписание
-REPORT_TIME = "08:00"  # МСК
+REPORT_TIME = "09:00"  # МСК
 TIMEZONE = "Europe/Moscow"
 
 # Пороги для групп товаров (шт/день)

@@ -13,12 +13,6 @@ if [ ! -f .env ]; then
     exit 1
 fi
 
-# Проверяем наличие токена WB
-if [ ! -f nemov_token.txt ]; then
-    echo "❌ Файл nemov_token.txt не найден!"
-    exit 1
-fi
-
 echo "🚀 Запуск бота..."
 docker-compose up -d --build
 

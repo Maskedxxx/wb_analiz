@@ -170,6 +170,17 @@ def generate_report() -> str:
     # Объединяем заказы и остатки
     df = merge_orders_stocks(orders_30d, stocks)
     df = calc_avg_per_day(df, days=30)
+
+    # Заполняем поля возвратов если отсутствуют после merge
+    for col in ['in_way_from_client', 'stock_qty_clean']:
+        if col not in df.columns:
+            df[col] = 0
+        df[col] = df[col].fillna(0).astype(int)
+
+    # Используем чистый остаток (без товаров в возврате) для расчётов
+    df['stock_qty_original'] = df['stock_qty']
+    df['stock_qty'] = df['stock_qty_clean']
+
     logger.info(f"Объединено товаров: {len(df)}")
 
     # === 2. Группировка товаров (A/B/C) ===
@@ -227,10 +238,12 @@ def generate_report() -> str:
     output_path = os.path.join(REPORTS_DIR, f'price_report_{timestamp}.xlsx')
 
     with pd.ExcelWriter(output_path, engine='openpyxl') as writer:
-        # Лист 1
+        # Лист 1: с колонкой "В возвратах" для прозрачности
         report_export = report[['supplierArticle', 'group', 'stock_qty',
+                                'in_way_from_client',
                                 'avg_per_day', 'days_remaining', 'price_increase_pct']]
-        report_export.columns = ['Артикул', 'Группа', 'Остаток',
+        report_export.columns = ['Артикул', 'Группа', 'Остаток (чист.)',
+                                 'В возвратах',
                                  'Продаж/день', 'Дней осталось', 'Повышение %']
         report_export.to_excel(writer, sheet_name='Повысить цену', index=False)
 
@@ -250,7 +263,7 @@ def generate_report() -> str:
 
         # Лист 1: ширина столбцов
         ws1 = writer.sheets['Повысить цену']
-        format_worksheet(ws1, {1: 20, 2: 10, 3: 12, 4: 14, 5: 16, 6: 14})
+        format_worksheet(ws1, {1: 20, 2: 10, 3: 16, 4: 14, 5: 14, 6: 16, 7: 14})
 
         # Лист 2: ширина столбцов
         format_worksheet(ws2, {1: 20, 2: 10, 3: 14})

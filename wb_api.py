@@ -15,21 +15,17 @@ import os
 
 logger = logging.getLogger(__name__)
 
-# Настройки
-# Поддержка переменной окружения для Docker
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-TOKEN_FILE = os.getenv('WB_TOKEN_FILE', os.path.join(BASE_DIR, 'nemov_token.txt'))
-
 # API endpoints
 API_ORDERS = 'https://statistics-api.wildberries.ru/api/v1/supplier/orders'
 API_STOCKS = 'https://statistics-api.wildberries.ru/api/v1/supplier/stocks'
 
 
 def get_token() -> str:
-    """Читает токен из файла (вторая строка)."""
-    with open(TOKEN_FILE, 'r') as f:
-        lines = f.readlines()
-        return lines[1].strip()
+    """Возвращает токен WB API из переменной окружения WB_TOKEN."""
+    token = os.getenv('WB_TOKEN')
+    if not token:
+        raise ValueError("WB_TOKEN не задан в переменных окружения")
+    return token
 
 
 def fetch_with_retry(url: str, token: str, retries: int = 3, delay: int = 5) -> list:
@@ -127,10 +123,21 @@ def get_stocks(nm_ids: list = None) -> pd.DataFrame:
     if nm_ids is not None:
         df = df[df['nmId'].isin(nm_ids)]
 
-    # Группируем по nmId, суммируем остатки
+    # Добавляем поле inWayFromClient (товары в возврате/отказе, в пути на склад)
+    if 'inWayFromClient' not in df.columns:
+        df['inWayFromClient'] = 0
+
+    # Группируем по nmId, суммируем остатки и возвраты в пути
     grouped = df.groupby('nmId').agg({
-        'quantity': 'sum'
-    }).rename(columns={'quantity': 'stock_qty'}).reset_index()
+        'quantity': 'sum',
+        'inWayFromClient': 'sum'
+    }).rename(columns={
+        'quantity': 'stock_qty',
+        'inWayFromClient': 'in_way_from_client'
+    }).reset_index()
+
+    # Чистый остаток = остаток на складе минус товары в возврате
+    grouped['stock_qty_clean'] = (grouped['stock_qty'] - grouped['in_way_from_client']).clip(lower=0)
 
     return grouped
 

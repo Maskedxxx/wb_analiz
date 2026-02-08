@@ -7,9 +7,9 @@ import os
 # Токены и ID
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')  # ID чата заказчика
+WB_TOKEN = os.getenv('WB_TOKEN')  # Токен WB API
 
 # Пути
-WB_TOKEN_FILE = os.getenv('WB_TOKEN_FILE', '/app/nemov_token.txt')
 FEEDBACK_DIR = os.getenv('FEEDBACK_DIR', '/app/feedback')
 REPORTS_DIR = os.getenv('REPORTS_DIR', '/app/reports')
 LOGS_DIR = os.getenv('LOGS_DIR', '/app/logs')

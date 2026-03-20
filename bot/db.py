@@ -3,6 +3,7 @@
 """
 
 import os
+import time
 import logging
 import aiosqlite
 
@@ -27,9 +28,26 @@ async def _migrate_obfuscate_tokens(db):
         logger.info(f"Обфусцировано токенов: {len(plain_rows)}")
 
 
+async def _migrate_add_column_safe(db, table, column, col_type):
+    """Добавляет колонку если её ещё нет (идемпотентно)."""
+    cursor = await db.execute(f"PRAGMA table_info({table})")
+    columns = [row[1] for row in await cursor.fetchall()]
+    if column not in columns:
+        await db.execute(f"ALTER TABLE {table} ADD COLUMN {column} {col_type}")
+
+
+async def _migrate_marketplace_name(db):
+    await _migrate_add_column_safe(db, 'stores', 'marketplace_name', 'TEXT')
+
+
+async def _migrate_product_price(db):
+    await _migrate_add_column_safe(db, 'product_data', 'price', 'REAL')
+
+
 MIGRATIONS = [
-    (1, "ALTER TABLE stores ADD COLUMN marketplace_name TEXT"),
+    (1, _migrate_marketplace_name),
     (2, _migrate_obfuscate_tokens),
+    (3, _migrate_product_price),
 ]
 
 
@@ -61,11 +79,19 @@ async def _run_migrations(db):
     await db.commit()
 
 
+async def _connect():
+    """Подключение к БД с включёнными foreign keys."""
+    db = await aiosqlite.connect(DB_PATH)
+    await db.execute('PRAGMA foreign_keys = ON')
+    return db
+
+
 async def init_db():
     """Создаёт таблицы если не существуют. Автомигрирует WB_TOKEN из env."""
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
 
     async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute('PRAGMA foreign_keys = ON')
         await db.execute('''
             CREATE TABLE IF NOT EXISTS stores (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -315,6 +341,8 @@ async def get_last_report(store_id: int) -> dict | None:
 
 async def cleanup_old_reports(days: int) -> int:
     """Удаляет отчёты старше days дней из БД и с диска. Возвращает кол-во удалённых."""
+    import asyncio
+
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
         cursor = await db.execute(
@@ -326,8 +354,9 @@ async def cleanup_old_reports(days: int) -> int:
 
         deleted = 0
         for row in rows:
-            if row['file_path'] and os.path.exists(row['file_path']):
-                os.remove(row['file_path'])
+            fp = row['file_path']
+            if fp and await asyncio.to_thread(os.path.exists, fp):
+                await asyncio.to_thread(os.remove, fp)
             await db.execute('DELETE FROM report_history WHERE id = ?', (row['id'],))
             deleted += 1
 
@@ -375,26 +404,44 @@ async def is_subscriber(chat_id: int) -> bool:
         return await cursor.fetchone() is not None
 
 
-# === Authorization ===
+# === Authorization (с in-memory кэшем) ===
+
+_authorized_cache: set[int] = set()
+_auth_cache_loaded = False
+_auth_cache_ts: float = 0
+_AUTH_CACHE_TTL = 300  # перезагрузка кэша каждые 5 минут
+
+
+async def _ensure_auth_cache():
+    """Загружает кэш авторизованных пользователей из БД (с TTL)."""
+    global _auth_cache_loaded, _auth_cache_ts
+    now = time.monotonic()
+    if _auth_cache_loaded and (now - _auth_cache_ts < _AUTH_CACHE_TTL):
+        return
+    async with aiosqlite.connect(DB_PATH) as db:
+        cursor = await db.execute('SELECT chat_id FROM authorized_users')
+        rows = await cursor.fetchall()
+        _authorized_cache.clear()
+        _authorized_cache.update(row[0] for row in rows)
+    _auth_cache_loaded = True
+    _auth_cache_ts = now
+
 
 async def is_authorized(chat_id: int) -> bool:
-    """Проверяет, авторизован ли пользователь."""
-    async with aiosqlite.connect(DB_PATH) as db:
-        cursor = await db.execute(
-            'SELECT 1 FROM authorized_users WHERE chat_id = ?',
-            (chat_id,)
-        )
-        return await cursor.fetchone() is not None
+    """Проверяет авторизацию из in-memory кэша (без SQL на каждый запрос)."""
+    await _ensure_auth_cache()
+    return chat_id in _authorized_cache
 
 
 async def authorize_user(chat_id: int):
-    """Добавляет пользователя в список авторизованных."""
+    """Добавляет пользователя в список авторизованных + обновляет кэш."""
     async with aiosqlite.connect(DB_PATH) as db:
         await db.execute(
             'INSERT OR IGNORE INTO authorized_users (chat_id) VALUES (?)',
             (chat_id,)
         )
         await db.commit()
+    _authorized_cache.add(chat_id)
 
 
 # === Product Data (кэш API-данных) ===
@@ -414,15 +461,15 @@ async def save_product_data(store_id: int, rows: list[dict]):
                    (store_id, nm_id, supplier_article, subject, category,
                     product_group, stock_qty, in_way_from_client, stock_qty_clean,
                     orders_7d, orders_14d, orders_30d,
-                    avg_per_day, days_remaining, price_increase_pct)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
+                    avg_per_day, days_remaining, price_increase_pct, price)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)''',
                 (store_id, row['nm_id'], row.get('supplier_article'),
                  row.get('subject'), row.get('category'),
                  row.get('product_group'), row.get('stock_qty'),
                  row.get('in_way_from_client', 0), row.get('stock_qty_clean'),
                  row.get('orders_7d'), row.get('orders_14d'), row.get('orders_30d'),
                  row.get('avg_per_day'), row.get('days_remaining'),
-                 row.get('price_increase_pct'))
+                 row.get('price_increase_pct'), row.get('price'))
             )
         await db.commit()
 

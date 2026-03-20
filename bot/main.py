@@ -84,8 +84,16 @@ async def main():
     try:
         await dp.start_polling(bot)
     finally:
-        scheduler.shutdown()
-        await bot.session.close()
+        # Graceful shutdown: каждый ресурс закрываем отдельно,
+        # чтобы ошибка в одном не блокировала остальные
+        try:
+            scheduler.shutdown(wait=False)
+        except Exception:
+            logger.exception("Ошибка при остановке планировщика")
+        try:
+            await bot.session.close()
+        except Exception:
+            logger.exception("Ошибка при закрытии сессии бота")
 
 
 if __name__ == '__main__':

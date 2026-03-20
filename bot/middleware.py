@@ -17,11 +17,22 @@ logger = logging.getLogger(__name__)
 _RATE_LIMIT = 20          # запросов
 _RATE_WINDOW = 60         # секунд
 _rate_data: dict[int, list[float]] = {}
+_last_cleanup: float = 0
+_CLEANUP_INTERVAL = 300   # очистка устаревших записей каждые 5 минут
 
 
 def _is_rate_limited(user_id: int) -> bool:
     """Проверяет, превышен ли лимит запросов для пользователя."""
+    global _last_cleanup
     now = time.monotonic()
+
+    # Периодическая очистка устаревших записей (предотвращает утечку памяти)
+    if now - _last_cleanup > _CLEANUP_INTERVAL:
+        stale = [uid for uid, ts in _rate_data.items() if not ts or now - ts[-1] >= _RATE_WINDOW]
+        for uid in stale:
+            del _rate_data[uid]
+        _last_cleanup = now
+
     timestamps = _rate_data.get(user_id, [])
     # Убираем старые записи
     timestamps = [t for t in timestamps if now - t < _RATE_WINDOW]

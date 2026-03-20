@@ -25,6 +25,11 @@ class NavCB(CallbackData, prefix="nav"):
     target: str  # "main", "analysis", "settings", "store_mgmt", "calc_params"
 
 
+class CompareCB(CallbackData, prefix="cmp"):
+    action: str     # "select_first", "select_second"
+    store_id: int = 0
+
+
 class SubscribeCB(CallbackData, prefix="sub"):
     action: str  # "toggle"
 
@@ -46,6 +51,10 @@ def main_menu_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text="📊 Анализ остатков",
             callback_data=MenuCB(action="analysis").pack()
+        )],
+        [InlineKeyboardButton(
+            text="🔀 Сравнение магазинов",
+            callback_data=MenuCB(action="comparison").pack()
         )],
         [InlineKeyboardButton(
             text="⚙️ Настройки",
@@ -190,11 +199,46 @@ def confirm_delete_kb(store_id: int) -> InlineKeyboardMarkup:
     ])
 
 
+def compare_stores_kb(stores: list, action: str = "select_first", exclude_id: int = None) -> InlineKeyboardMarkup:
+    """
+    Список магазинов для сравнения.
+
+    Args:
+        stores: список dict с id и name
+        action: "select_first" или "select_second"
+        exclude_id: id магазина для исключения из списка (уже выбранный)
+    """
+    buttons = []
+    for s in stores:
+        if exclude_id and s['id'] == exclude_id:
+            continue
+        buttons.append([InlineKeyboardButton(
+            text=store_display_name(s),
+            callback_data=CompareCB(action=action, store_id=s['id']).pack()
+        )])
+
+    buttons.append([InlineKeyboardButton(
+        text="← Назад",
+        callback_data=NavCB(target="main").pack()
+    )])
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
 def cancel_kb() -> InlineKeyboardMarkup:
     """Кнопка отмены (возврат в главное меню)."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
             text="❌ Отмена",
+            callback_data=NavCB(target="main").pack()
+        )]
+    ])
+
+
+def back_to_menu_kb() -> InlineKeyboardMarkup:
+    """Кнопка возврата в главное меню (после завершения операции)."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="← Главное меню",
             callback_data=NavCB(target="main").pack()
         )]
     ])

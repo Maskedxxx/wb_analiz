@@ -11,17 +11,13 @@ from aiogram.fsm.context import FSMContext
 
 from bot.keyboards import MenuCB, SettingsCB, NavCB, SubscribeCB, settings_kb, calc_params_kb, cancel_kb
 from bot.states import MenuStates
+from bot.config import REPORT_TIME as DEFAULT_REPORT_TIME, DEFAULT_DAYS_N, THRESHOLD_A as DEFAULT_THRESHOLD_A, THRESHOLD_B as DEFAULT_THRESHOLD_B
 from bot.db import get_setting, set_setting, is_subscriber, add_subscriber, remove_subscriber
 from bot.scheduler import reschedule_daily_reports
 
 logger = logging.getLogger(__name__)
 
 router = Router()
-
-DEFAULT_REPORT_TIME = "09:00"
-DEFAULT_DAYS_N = 7
-DEFAULT_THRESHOLD_A = 4.0
-DEFAULT_THRESHOLD_B = 0.5
 
 
 async def _send_settings(callback: CallbackQuery):

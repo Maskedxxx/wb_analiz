@@ -19,6 +19,7 @@ logger = logging.getLogger(__name__)
 API_ORDERS = 'https://statistics-api.wildberries.ru/api/v1/supplier/orders'
 API_STOCKS = 'https://statistics-api.wildberries.ru/api/v1/supplier/stocks'
 API_SELLER_INFO = 'https://common-api.wildberries.ru/api/v1/seller-info'
+API_PRICES = 'https://discounts-prices-api.wildberries.ru/api/v2/list/goods/filter'
 
 
 class WBTokenError(Exception):
@@ -188,6 +189,54 @@ def get_stocks(nm_ids: list = None, token: str = None) -> pd.DataFrame:
     grouped['stock_qty_clean'] = (grouped['stock_qty'] - grouped['in_way_from_client']).clip(lower=0)
 
     return grouped
+
+
+def get_prices(nm_ids: list = None, token: str = None) -> dict:
+    """
+    Получает цены товаров (после скидки) через Prices API.
+
+    Args:
+        nm_ids: список nmId для фильтрации (если None — все)
+        token: токен WB API
+
+    Returns:
+        dict {nmID: discountedPrice} — минимальная цена среди размеров
+    """
+    if token is None:
+        token = get_token()
+
+    nm_set = set(nm_ids) if nm_ids else None
+    prices = {}
+    limit = 1000
+    offset = 0
+
+    while True:
+        url = f"{API_PRICES}?limit={limit}&offset={offset}"
+        data = fetch_with_retry(url, token, retries=2)
+
+        if not data:
+            break
+
+        goods = data.get('data', {}).get('listGoods', [])
+        if not goods:
+            break
+
+        for item in goods:
+            nm_id = item.get('nmID')
+            if nm_set is not None and nm_id not in nm_set:
+                continue
+            sizes = item.get('sizes', [])
+            if sizes:
+                discounted = [s.get('discountedPrice', 0) for s in sizes if s.get('discountedPrice')]
+                if discounted:
+                    prices[nm_id] = min(discounted)
+
+        if len(goods) < limit:
+            break
+        offset += limit
+
+    logger.info(f"Загружено цен: {len(prices)}")
+    return prices
 
 
 def get_orders(days: int = 7, token: str = None) -> pd.DataFrame:

@@ -3,6 +3,7 @@
 """
 
 import os
+from datetime import timezone, timedelta
 
 # Токены и ID
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
@@ -19,6 +20,10 @@ LOGS_DIR = os.getenv('LOGS_DIR', '/app/logs')
 # Расписание (значения по умолчанию, перекрываются из БД)
 REPORT_TIME = "09:00"  # МСК
 TIMEZONE = "Europe/Moscow"
+MSK_TZ = timezone(timedelta(hours=3))
+
+# Пороги и дефолты для настроек (единственный источник правды)
+DEFAULT_DAYS_N = 7
 
 # Фидбек
 FEEDBACK_RETENTION_MONTHS = int(os.getenv('FEEDBACK_RETENTION_MONTHS', '3'))

@@ -3,20 +3,19 @@
 """
 
 import logging
-from datetime import datetime, timezone, timedelta
+from datetime import datetime
 
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
 from aiogram.filters import Command
 from aiogram.fsm.context import FSMContext
+from aiogram.exceptions import TelegramBadRequest
 
-from bot.config import BOT_PASSWORD
+from bot.config import BOT_PASSWORD, MSK_TZ
 from bot.keyboards import MenuCB, NavCB, main_menu_kb, store_display_name
 from bot.db import get_stores, get_last_report, get_setting, is_subscriber, is_authorized, authorize_user, log_action
 from bot.security import verify_password
 from bot.states import MenuStates
-
-_MSK = timezone(timedelta(hours=3))
 
 logger = logging.getLogger(__name__)
 
@@ -51,7 +50,7 @@ async def _send_main_menu(target, stores: list = None):
                 try:
                     raw = last['created_at'][:16].replace('T', ' ')
                     utc_dt = datetime.strptime(raw, '%Y-%m-%d %H:%M').replace(tzinfo=timezone.utc)
-                    msk_dt = utc_dt.astimezone(_MSK)
+                    msk_dt = utc_dt.astimezone(MSK_TZ)
                     dt_short = msk_dt.strftime('%d.%m %H:%M')
                 except Exception:
                     dt_short = last['created_at'][:16]
@@ -70,7 +69,11 @@ async def _send_main_menu(target, stores: list = None):
     if isinstance(target, Message):
         await target.answer(text, reply_markup=main_menu_kb(), parse_mode="HTML")
     elif isinstance(target, CallbackQuery):
-        await target.message.edit_text(text, reply_markup=main_menu_kb(), parse_mode="HTML")
+        try:
+            await target.message.edit_text(text, reply_markup=main_menu_kb(), parse_mode="HTML")
+        except TelegramBadRequest:
+            # Сообщение-документ нельзя edit_text — отправляем новое
+            await target.message.answer(text, reply_markup=main_menu_kb(), parse_mode="HTML")
         await target.answer()
 
 

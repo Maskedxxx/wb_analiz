@@ -18,3 +18,5 @@ class MenuStates(StatesGroup):
     set_report_time = State()
     set_days_threshold = State()
     set_group_thresholds = State()
+    compare_select_first = State()
+    compare_select_second = State()

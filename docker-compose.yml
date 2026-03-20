@@ -13,8 +13,8 @@ services:
       - ./logs:/app/logs
     restart: unless-stopped
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import os,time; assert time.time()-os.path.getmtime('/tmp/health')<90\""]
-      interval: 30s
+      test: ["CMD-SHELL", "python -c \"import os,time; assert time.time()-os.path.getmtime('/tmp/health')<600\""]
+      interval: 300s
       timeout: 5s
       retries: 3
       start_period: 30s

@@ -169,7 +169,7 @@ async def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     _scheduler.add_job(
         _touch_health,
         'interval',
-        seconds=30,
+        seconds=300,
         id='healthcheck',
         replace_existing=True
     )

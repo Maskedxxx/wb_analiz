@@ -18,6 +18,17 @@ logger = logging.getLogger(__name__)
 # API endpoints
 API_ORDERS = 'https://statistics-api.wildberries.ru/api/v1/supplier/orders'
 API_STOCKS = 'https://statistics-api.wildberries.ru/api/v1/supplier/stocks'
+API_SELLER_INFO = 'https://common-api.wildberries.ru/api/v1/seller-info'
+
+
+class WBTokenError(Exception):
+    """Ошибка авторизации WB API (невалидный или истёкший токен)."""
+    pass
+
+
+class WBApiError(Exception):
+    """Общая ошибка WB API."""
+    pass
 
 
 def get_token() -> str:
@@ -40,6 +51,10 @@ def fetch_with_retry(url: str, token: str, retries: int = 3, delay: int = 5) -> 
 
     Returns:
         Список данных из JSON ответа
+
+    Raises:
+        WBTokenError: при ошибке авторизации (401/403)
+        WBApiError: при других HTTP ошибках
     """
     req = urllib.request.Request(url)
     req.add_header('Authorization', token)
@@ -51,6 +66,18 @@ def fetch_with_retry(url: str, token: str, retries: int = 3, delay: int = 5) -> 
                 data = json.loads(resp.read().decode('utf-8'))
             return data if data else []
 
+        except urllib.error.HTTPError as e:
+            if e.code in (401, 403):
+                raise WBTokenError(
+                    f"Токен невалиден или истёк (HTTP {e.code}). "
+                    "Обновите токен в настройках бота."
+                )
+            if e.code == 429:
+                logger.warning(f"Rate limit (429), ожидание {delay * 2} сек...")
+                time.sleep(delay * 2)
+                continue
+            raise WBApiError(f"Ошибка WB API: HTTP {e.code}") from e
+
         except (IncompleteRead, URLError, TimeoutError) as e:
             logger.warning(f"Попытка {attempt}/{retries} не удалась: {e}")
             if attempt < retries:
@@ -59,6 +86,23 @@ def fetch_with_retry(url: str, token: str, retries: int = 3, delay: int = 5) -> 
             else:
                 logger.error(f"Все {retries} попытки исчерпаны")
                 raise
+
+
+def get_seller_info(token: str) -> dict:
+    """
+    Получает информацию о продавце по токену.
+
+    Args:
+        token: токен WB API
+
+    Returns:
+        dict с информацией о продавце (name, sid, etc.)
+
+    Raises:
+        WBTokenError: при невалидном токене
+    """
+    data = fetch_with_retry(API_SELLER_INFO, token, retries=1)
+    return data if isinstance(data, dict) else {}
 
 
 def calc_avg_per_day(df: pd.DataFrame, days: int = 7) -> pd.DataFrame:
@@ -96,19 +140,23 @@ def merge_orders_stocks(orders: pd.DataFrame, stocks: pd.DataFrame) -> pd.DataFr
     return df
 
 
-def get_stocks(nm_ids: list = None) -> pd.DataFrame:
+def get_stocks(nm_ids: list = None, token: str = None) -> pd.DataFrame:
     """
     Получает остатки со складов, группирует по nmId.
 
     Args:
         nm_ids: список nmId для фильтрации (если None — все)
+        token: токен WB API (если None — из переменной окружения)
 
     Returns:
         DataFrame с колонками:
         - nmId: ID товара
         - stock_qty: суммарный остаток на всех складах
+        - in_way_from_client: товары в возврате
+        - stock_qty_clean: чистый остаток
     """
-    token = get_token()
+    if token is None:
+        token = get_token()
     date_from = '2020-01-01'  # берём все остатки
 
     url = f"{API_STOCKS}?dateFrom={date_from}"
@@ -142,12 +190,13 @@ def get_stocks(nm_ids: list = None) -> pd.DataFrame:
     return grouped
 
 
-def get_orders(days: int = 7) -> pd.DataFrame:
+def get_orders(days: int = 7, token: str = None) -> pd.DataFrame:
     """
     Получает заказы за N дней и группирует по nmId.
 
     Args:
         days: количество дней (по умолчанию 7)
+        token: токен WB API (если None — из переменной окружения)
 
     Returns:
         DataFrame с колонками:
@@ -155,9 +204,10 @@ def get_orders(days: int = 7) -> pd.DataFrame:
         - supplierArticle: артикул продавца
         - subject: название товара
         - category: категория
-        - orders_count: количество заказов
+        - orders_count_{days}d: количество заказов
     """
-    token = get_token()
+    if token is None:
+        token = get_token()
     date_from = (datetime.now() - timedelta(days=days)).strftime('%Y-%m-%d')
 
     # Запрос к API с retry

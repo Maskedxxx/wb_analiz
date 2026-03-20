@@ -11,9 +11,11 @@ venv/
 
 # Данные
 *.csv
+*.db
 reports/
 feedback/
 logs/
+data/
 
 # IDE
 .idea/
@@ -22,9 +24,13 @@ logs/
 
 # Jupyter
 .ipynb_checkpoints/
+.ipynb
 
 # macOS
 .DS_Store
 
 # Legacy
 legacy_v1/
+
+# Claude
+.claude/

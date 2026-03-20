@@ -11,7 +11,7 @@ COPY wb_api.py .
 COPY bot/ bot/
 
 # Создаём директории для данных
-RUN mkdir -p /app/feedback /app/reports
+RUN mkdir -p /app/feedback /app/reports /app/data
 
 # Запуск бота
 CMD ["python", "-m", "bot.main"]

@@ -1,0 +1,33 @@
+# Секреты
+.env
+.env.*
+nemov_token.txt
+
+# Данные (маунтятся как volumes)
+data/
+reports/
+feedback/
+logs/
+
+# Git
+.git/
+.gitignore
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+
+# Jupyter
+*.ipynb
+.ipynb_checkpoints/
+
+# Сгенерированные файлы
+*.xlsx
+*.csv
+
+# Документация и скрипты (не нужны в контейнере)
+*.md
+run_local.sh
+start.sh

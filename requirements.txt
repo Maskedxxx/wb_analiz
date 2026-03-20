@@ -1,5 +1,6 @@
-aiogram>=3.0.0
-pandas>=2.0.0
-openpyxl>=3.1.0
-apscheduler>=3.10.0
-pytz>=2023.3
+aiogram==3.26.0
+pandas==3.0.1
+openpyxl==3.1.5
+APScheduler==3.11.2
+pytz==2026.1.post1
+aiosqlite==0.22.1

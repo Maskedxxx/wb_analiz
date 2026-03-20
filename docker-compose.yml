@@ -7,7 +7,20 @@ services:
       - ./feedback:/app/feedback
       # Сохранение отчётов
       - ./reports:/app/reports
+      # База данных (магазины, настройки)
+      - ./data:/app/data
+      # Логи бота
+      - ./logs:/app/logs
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import os,time; assert time.time()-os.path.getmtime('/tmp/health')<90\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 30s
+    stop_grace_period: 10s
     environment:
       - FEEDBACK_DIR=/app/feedback
       - REPORTS_DIR=/app/reports
+      - DB_PATH=/app/data/bot.db
+      - LOGS_DIR=/app/logs

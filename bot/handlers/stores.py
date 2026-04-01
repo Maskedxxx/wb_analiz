@@ -13,9 +13,10 @@ from bot.keyboards import (
     SettingsCB, StoreCB, NavCB,
     store_management_kb, confirm_delete_kb, cancel_kb, store_display_name,
 )
-from bot.states import MenuStates
+from bot.core.states import MenuStates
 from bot.db import get_stores, get_store, add_store, update_store, delete_store, log_action
-from wb_api import get_seller_info, WBTokenError
+from bot.services.wb_client import get_seller_info, WBTokenError
+from bot.utils.messages import edit_or_send
 
 logger = logging.getLogger(__name__)
 
@@ -79,16 +80,7 @@ async def process_store_token(message: Message, state: FSMContext, bot: Bot):
     chat_id = message.chat.id
 
     async def edit_bot_msg(text: str, reply_markup=None):
-        if bot_msg_id:
-            try:
-                await bot.edit_message_text(
-                    text, chat_id=chat_id, message_id=bot_msg_id,
-                    reply_markup=reply_markup, parse_mode="HTML"
-                )
-                return
-            except Exception:
-                pass
-        await bot.send_message(chat_id, text, reply_markup=reply_markup, parse_mode="HTML")
+        await edit_or_send(bot, chat_id, bot_msg_id, text, reply_markup)
 
     if len(token) < 10:
         await edit_bot_msg(
@@ -189,22 +181,7 @@ async def process_edit_store(message: Message, state: FSMContext, bot: Bot):
         "🏪 <b>Управление магазинами</b>"
     )
 
-    if bot_msg_id:
-        try:
-            await bot.edit_message_text(
-                result_text, chat_id=chat_id, message_id=bot_msg_id,
-                reply_markup=store_management_kb(stores), parse_mode="HTML"
-            )
-        except Exception:
-            await bot.send_message(
-                chat_id, result_text,
-                reply_markup=store_management_kb(stores), parse_mode="HTML"
-            )
-    else:
-        await bot.send_message(
-            chat_id, result_text,
-            reply_markup=store_management_kb(stores), parse_mode="HTML"
-        )
+    await edit_or_send(bot, chat_id, bot_msg_id, result_text, store_management_kb(stores))
 
     logger.info(f"Магазин #{store_id} marketplace_name → {marketplace_name!r}")
 

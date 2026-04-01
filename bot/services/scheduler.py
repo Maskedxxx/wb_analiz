@@ -12,16 +12,13 @@ from aiogram import Bot
 from aiogram.types import FSInputFile
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
-import pytz
-
-from bot.config import TIMEZONE, DATA_CACHE_TTL
-from bot.db import (
-    get_stores, get_setting, save_report_history, get_subscribers,
-    save_product_data, get_latest_product_data, is_data_fresh,
-)
+from bot.config import TIMEZONE, MSK_TZ
+from bot.db import get_stores, get_setting, save_report_history, get_subscribers
 from bot.keyboards import store_display_name
-from bot.report import fetch_store_data, generate_report_from_data
-from wb_api import WBTokenError
+from bot.services.data_service import fetch_or_cache_product, fetch_or_cache_warehouse
+from bot.reports.single import generate_report_from_data
+from bot.reports.summary import generate_summary_report
+from bot.services.wb_client import WBTokenError
 
 logger = logging.getLogger(__name__)
 
@@ -58,7 +55,7 @@ async def send_daily_reports(bot: Bot):
     logger.info(f"Генерация отчётов для {len(stores)} магазинов, подписчиков: {len(subscribers)}")
 
     # Шапка рассылки
-    tz = pytz.timezone(TIMEZONE)
+    tz = MSK_TZ
     now = datetime.now(tz)
     report_time = await get_setting('report_time', DEFAULT_REPORT_TIME)
     store_names = ", ".join(store_display_name(s) for s in stores)
@@ -82,26 +79,32 @@ async def send_daily_reports(bot: Bot):
     days_threshold = int(await get_setting('calc_days_threshold', '7'))
     threshold_a = float(await get_setting('calc_threshold_a', '4.0'))
     threshold_b = float(await get_setting('calc_threshold_b', '0.5'))
+    threshold_c = float(await get_setting('calc_threshold_c', '0.2'))
 
-    # Отчёт по каждому магазину
+    # Отчёт по каждому магазину + накопление данных для сводного
+    all_stores_data = {}   # {store_name: product_rows}
+    all_warehouse_data = {}  # {store_name: warehouse_rows}
+
     for store in stores:
         name = store_display_name(store)
         try:
             # 1. Загрузка данных из API (или из кэша если свежие)
-            if await is_data_fresh(store['id'], DATA_CACHE_TTL):
-                logger.info(f"Данные для {name} свежие (кэш), пропускаем API")
-                product_rows, _ = await get_latest_product_data(store['id'])
-            else:
-                product_rows = await asyncio.to_thread(
-                    fetch_store_data, token=store['token'],
-                    days_threshold=days_threshold, threshold_a=threshold_a, threshold_b=threshold_b,
-                )
-                await save_product_data(store['id'], product_rows)
+            product_rows = await fetch_or_cache_product(
+                store['id'], store['token'], days_threshold, threshold_a, threshold_b,
+            )
 
-            # 2. Генерация Excel из данных
+            # 2. Загрузка данных по складам
+            warehouse_rows = await fetch_or_cache_warehouse(store['id'], store['token'])
+
+            # Накапливаем для сводного отчёта
+            all_stores_data[name] = product_rows
+            all_warehouse_data[name] = warehouse_rows
+
+            # 3. Генерация Excel из данных
             report_path = await asyncio.to_thread(
                 generate_report_from_data, product_rows=product_rows, store_name=name,
                 days_threshold=days_threshold, threshold_a=threshold_a, threshold_b=threshold_b,
+                threshold_c=threshold_c, warehouse_rows=warehouse_rows,
             )
             await save_report_history(store['id'], report_path)
 
@@ -135,6 +138,37 @@ async def send_daily_reports(bot: Bot):
                 )
             logger.error(f"Ошибка отчёта для {name}: {e}", exc_info=True)
 
+    # Сводный отчёт по всем магазинам (если данные есть хотя бы по 2 магазинам)
+    if len(all_stores_data) >= 2:
+        try:
+            summary_path = await asyncio.to_thread(
+                generate_summary_report,
+                all_stores_data=all_stores_data,
+                all_warehouse_data=all_warehouse_data,
+                days_threshold=days_threshold,
+                threshold_a=threshold_a,
+                threshold_b=threshold_b,
+                threshold_c=threshold_c,
+            )
+            if summary_path:
+                document = FSInputFile(summary_path, filename=os.path.basename(summary_path))
+                for chat_id in subscribers:
+                    await bot.send_document(
+                        chat_id=chat_id,
+                        document=document,
+                        caption="📊 Сводный отчёт по всем магазинам"
+                    )
+                logger.info(f"Сводный отчёт отправлен {len(subscribers)} подписчикам")
+            else:
+                logger.info("Сводный отчёт не сгенерирован (нет общих позиций)")
+        except Exception as e:
+            for chat_id in subscribers:
+                await bot.send_message(
+                    chat_id=chat_id,
+                    text=f"❌ Ошибка сводного отчёта: {e}"
+                )
+            logger.error(f"Ошибка сводного отчёта: {e}", exc_info=True)
+
 
 def reschedule_daily_reports(time_str: str):
     """Перепланирует задачу без перезапуска бота."""
@@ -144,7 +178,7 @@ def reschedule_daily_reports(time_str: str):
     hour, minute = map(int, time_str.split(':'))
     _scheduler.reschedule_job(
         'daily_reports',
-        trigger=CronTrigger(hour=hour, minute=minute, timezone=pytz.timezone(TIMEZONE))
+        trigger=CronTrigger(hour=hour, minute=minute, timezone=MSK_TZ)
     )
     logger.info(f"Планировщик перепланирован: отчёты в {time_str} {TIMEZONE}")
 
@@ -153,7 +187,7 @@ async def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     """Настраивает и запускает планировщик."""
     global _scheduler, _bot
     _bot = bot
-    _scheduler = AsyncIOScheduler(timezone=pytz.timezone(TIMEZONE))
+    _scheduler = AsyncIOScheduler(timezone=MSK_TZ)
 
     report_time = await get_setting('report_time', DEFAULT_REPORT_TIME)
     hour, minute = map(int, report_time.split(':'))

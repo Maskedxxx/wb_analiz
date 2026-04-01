@@ -16,10 +16,10 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from bot.config import TELEGRAM_TOKEN, BOT_PASSWORD, LOGS_DIR, REPORT_RETENTION_DAYS, LOG_RETENTION_DAYS
 from bot.handlers import register_routers
 from bot.handlers.feedback import cleanup_old_feedback
-from bot.db import init_db, cleanup_old_reports, cleanup_old_product_data, migrate_trademarks
-from bot.middleware import AuthMiddleware
-from bot.scheduler import setup_scheduler
-from bot.security import TokenMaskFilter
+from bot.db import init_db, cleanup_old_reports, migrate_trademarks
+from bot.core.middleware import AuthMiddleware
+from bot.services.scheduler import setup_scheduler
+from bot.core.security import TokenMaskFilter
 
 # Создаём директорию для логов
 os.makedirs(LOGS_DIR, exist_ok=True)
@@ -58,9 +58,6 @@ async def main():
     deleted = await cleanup_old_reports(REPORT_RETENTION_DAYS)
     if deleted:
         logger.info(f"Удалено устаревших отчётов: {deleted}")
-    deleted_data = await cleanup_old_product_data(REPORT_RETENTION_DAYS)
-    if deleted_data:
-        logger.info(f"Удалено устаревших данных о товарах: {deleted_data}")
 
     # Инициализация бота и диспетчера
     bot = Bot(token=TELEGRAM_TOKEN)

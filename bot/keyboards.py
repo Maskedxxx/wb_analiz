@@ -30,6 +30,10 @@ class CompareCB(CallbackData, prefix="cmp"):
     store_id: int = 0
 
 
+class CompareModeCB(CallbackData, prefix="cmpmode"):
+    action: str  # "pair" | "summary"
+
+
 class SubscribeCB(CallbackData, prefix="sub"):
     action: str  # "toggle"
 
@@ -139,7 +143,7 @@ def settings_kb(current_time: str = "09:00", is_subscribed: bool = False) -> Inl
     ])
 
 
-def calc_params_kb(days_n: int = 7, threshold_a: float = 4.0, threshold_b: float = 0.5) -> InlineKeyboardMarkup:
+def calc_params_kb(days_n: int = 7, threshold_a: float = 4.0, threshold_b: float = 0.5, threshold_c: float = 0.2) -> InlineKeyboardMarkup:
     """Подменю параметров расчёта."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
@@ -147,7 +151,7 @@ def calc_params_kb(days_n: int = 7, threshold_a: float = 4.0, threshold_b: float
             callback_data=SettingsCB(action="days_threshold").pack()
         )],
         [InlineKeyboardButton(
-            text=f"📦 Группы: A≥{threshold_a} · B≥{threshold_b}",
+            text=f"📦 A≥{threshold_a} · B≥{threshold_b} · D<{threshold_c}",
             callback_data=SettingsCB(action="group_thresholds").pack()
         )],
         [InlineKeyboardButton(
@@ -196,6 +200,24 @@ def confirm_delete_kb(store_id: int) -> InlineKeyboardMarkup:
                 callback_data=NavCB(target="store_mgmt").pack()
             ),
         ]
+    ])
+
+
+def comparison_mode_kb() -> InlineKeyboardMarkup:
+    """Подменю режима сравнения: пара или сводный."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🔀 Сравнение пары",
+            callback_data=CompareModeCB(action="pair").pack()
+        )],
+        [InlineKeyboardButton(
+            text="📋 Сводный отчёт",
+            callback_data=CompareModeCB(action="summary").pack()
+        )],
+        [InlineKeyboardButton(
+            text="← Назад",
+            callback_data=NavCB(target="main").pack()
+        )],
     ])
 
 

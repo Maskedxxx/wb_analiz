@@ -9,7 +9,7 @@ from aiogram import BaseMiddleware
 
 from bot.config import BOT_PASSWORD
 from bot.db import is_authorized
-from bot.states import MenuStates
+from bot.core.states import MenuStates
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +19,7 @@ _RATE_WINDOW = 60         # секунд
 _rate_data: dict[int, list[float]] = {}
 _last_cleanup: float = 0
 _CLEANUP_INTERVAL = 300   # очистка устаревших записей каждые 5 минут
+_MAX_TRACKED_USERS = 10_000  # макс. пользователей в rate dict
 
 
 def _is_rate_limited(user_id: int) -> bool:
@@ -27,7 +28,7 @@ def _is_rate_limited(user_id: int) -> bool:
     now = time.monotonic()
 
     # Периодическая очистка устаревших записей (предотвращает утечку памяти)
-    if now - _last_cleanup > _CLEANUP_INTERVAL:
+    if now - _last_cleanup > _CLEANUP_INTERVAL or len(_rate_data) > _MAX_TRACKED_USERS:
         stale = [uid for uid, ts in _rate_data.items() if not ts or now - ts[-1] >= _RATE_WINDOW]
         for uid in stale:
             del _rate_data[uid]

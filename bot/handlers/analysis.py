@@ -5,7 +5,7 @@
 import os
 import asyncio
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from aiogram import Router, F
 from aiogram.types import CallbackQuery, FSInputFile
@@ -14,13 +14,14 @@ from bot.keyboards import (
     MenuCB, StoreCB, NavCB,
     stores_list_kb, store_actions_kb, store_display_name, back_to_menu_kb,
 )
-from bot.config import DATA_CACHE_TTL, MSK_TZ
+from bot.config import MSK_TZ
 from bot.db import (
     get_stores, get_store, get_last_report, save_report_history, get_setting,
-    save_product_data, get_latest_product_data, is_data_fresh, log_action,
+    log_action,
 )
-from bot.report import fetch_store_data, generate_report_from_data
-from wb_api import WBTokenError
+from bot.services.data_service import fetch_or_cache_product, fetch_or_cache_warehouse
+from bot.reports.single import generate_report_from_data
+from bot.services.wb_client import WBTokenError
 
 logger = logging.getLogger(__name__)
 
@@ -120,20 +121,18 @@ async def generate_new_report(callback: CallbackQuery, callback_data: StoreCB):
         days_threshold = int(await get_setting('calc_days_threshold', '7'))
         threshold_a = float(await get_setting('calc_threshold_a', '4.0'))
         threshold_b = float(await get_setting('calc_threshold_b', '0.5'))
+        threshold_c = float(await get_setting('calc_threshold_c', '0.2'))
 
         # 1. Загрузка данных из API (или из кэша если свежие)
         store_id = callback_data.store_id
-        if await is_data_fresh(store_id, DATA_CACHE_TTL):
-            logger.info(f"Данные для {name} свежие (кэш), пропускаем API")
-            product_rows, _ = await get_latest_product_data(store_id)
-        else:
-            product_rows = await asyncio.to_thread(
-                fetch_store_data, token=store['token'],
-                days_threshold=days_threshold, threshold_a=threshold_a, threshold_b=threshold_b,
-            )
-            await save_product_data(store_id, product_rows)
+        product_rows = await fetch_or_cache_product(
+            store_id, store['token'], days_threshold, threshold_a, threshold_b,
+        )
 
-        # 2. Генерация Excel из данных
+        # 2. Загрузка данных по складам (для детализации остатков)
+        warehouse_rows = await fetch_or_cache_warehouse(store_id, store['token'])
+
+        # 3. Генерация Excel из данных
         await progress_msg.edit_text(
             f"⏳ Генерирую отчёт для <b>{name}</b>...\n"
             "Формирование Excel.",
@@ -142,6 +141,7 @@ async def generate_new_report(callback: CallbackQuery, callback_data: StoreCB):
         report_path = await asyncio.to_thread(
             generate_report_from_data, product_rows=product_rows, store_name=name,
             days_threshold=days_threshold, threshold_a=threshold_a, threshold_b=threshold_b,
+            threshold_c=threshold_c, warehouse_rows=warehouse_rows,
         )
         await save_report_history(store_id, report_path)
 

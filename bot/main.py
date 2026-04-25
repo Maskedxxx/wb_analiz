@@ -16,10 +16,11 @@ from aiogram.fsm.storage.memory import MemoryStorage
 from bot.config import TELEGRAM_TOKEN, BOT_PASSWORD, LOGS_DIR, REPORT_RETENTION_DAYS, LOG_RETENTION_DAYS
 from bot.handlers import register_routers
 from bot.handlers.feedback import cleanup_old_feedback
-from bot.db import init_db, cleanup_old_reports, cleanup_old_product_data, migrate_trademarks
-from bot.middleware import AuthMiddleware
-from bot.scheduler import setup_scheduler
-from bot.security import TokenMaskFilter
+from bot.db import init_db, cleanup_old_reports, migrate_trademarks
+from bot.db.connection import close_connection
+from bot.core.middleware import AuthMiddleware
+from bot.services.scheduler import ReportScheduler
+from bot.core.security import TokenMaskFilter
 
 # Создаём директорию для логов
 os.makedirs(LOGS_DIR, exist_ok=True)
@@ -58,9 +59,6 @@ async def main():
     deleted = await cleanup_old_reports(REPORT_RETENTION_DAYS)
     if deleted:
         logger.info(f"Удалено устаревших отчётов: {deleted}")
-    deleted_data = await cleanup_old_product_data(REPORT_RETENTION_DAYS)
-    if deleted_data:
-        logger.info(f"Удалено устаревших данных о товарах: {deleted_data}")
 
     # Инициализация бота и диспетчера
     bot = Bot(token=TELEGRAM_TOKEN)
@@ -77,7 +75,8 @@ async def main():
     register_routers(dp)
 
     # Планировщик
-    scheduler = await setup_scheduler(bot)
+    scheduler_instance = ReportScheduler(bot)
+    scheduler = await scheduler_instance.start()
 
     # Запуск polling
     logger.info("Бот запущен!")
@@ -87,9 +86,13 @@ async def main():
         # Graceful shutdown: каждый ресурс закрываем отдельно,
         # чтобы ошибка в одном не блокировала остальные
         try:
-            scheduler.shutdown(wait=False)
+            scheduler_instance.shutdown()
         except Exception:
             logger.exception("Ошибка при остановке планировщика")
+        try:
+            await close_connection()
+        except Exception:
+            logger.exception("Ошибка при закрытии соединения с БД")
         try:
             await bot.session.close()
         except Exception:

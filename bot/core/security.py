@@ -4,6 +4,7 @@
 
 import base64
 import hashlib
+import hmac
 import logging
 import os
 import re
@@ -33,9 +34,9 @@ def hash_password(password: str) -> str:
     return hashlib.sha256(password.encode()).hexdigest()
 
 
-def verify_password(password: str, expected: str) -> bool:
-    """Сравнивает пароль с ожидаемым (plain или hash)."""
-    return hash_password(password) == hash_password(expected)
+def verify_password(password: str, expected_plain: str) -> bool:
+    """Сравнивает пароль с ожидаемым (plaintext). Constant-time сравнение."""
+    return hmac.compare_digest(hash_password(password), hash_password(expected_plain))
 
 
 def mask_token(token: str) -> str:

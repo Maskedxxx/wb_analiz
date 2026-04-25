@@ -3,7 +3,7 @@
 """
 
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 
 from aiogram import Router, F, Bot
 from aiogram.types import Message, CallbackQuery
@@ -13,9 +13,9 @@ from aiogram.exceptions import TelegramBadRequest
 
 from bot.config import BOT_PASSWORD, MSK_TZ
 from bot.keyboards import MenuCB, NavCB, main_menu_kb, store_display_name
-from bot.db import get_stores, get_last_report, get_setting, is_subscriber, is_authorized, authorize_user, log_action
-from bot.security import verify_password
-from bot.states import MenuStates
+from bot.db import get_stores, get_last_reports_batch, get_setting, is_subscriber, is_authorized, authorize_user, log_action
+from bot.core.security import verify_password
+from bot.core.states import MenuStates
 
 logger = logging.getLogger(__name__)
 
@@ -42,9 +42,10 @@ async def _send_main_menu(target, stores: list = None):
     # Магазины с датой последнего отчёта
     text += f"🏪 Магазинов: {len(stores)}\n"
     if stores:
+        last_reports = await get_last_reports_batch([s['id'] for s in stores])
         for s in stores:
             name = store_display_name(s)
-            last = await get_last_report(s['id'])
+            last = last_reports.get(s['id'])
             if last:
                 # created_at хранится в UTC (SQLite datetime('now')), конвертируем в МСК
                 try:

@@ -5,6 +5,8 @@ Inline-клавиатуры для меню бота.
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters.callback_data import CallbackData
 
+from bot.utils.stores import store_display_name  # noqa: F401 — re-exported below
+
 
 # === Callback Data ===
 
@@ -13,12 +15,16 @@ class MenuCB(CallbackData, prefix="menu"):
 
 
 class StoreCB(CallbackData, prefix="store"):
-    action: str     # "select", "last", "new", "edit", "delete", "confirm_delete", "add"
+    action: str     # "select", "last", "new", "edit_menu", "edit_name", "edit_token", "delete", "confirm_delete", "add"
     store_id: int = 0
 
 
+class StorePageCB(CallbackData, prefix="storepage"):
+    page: int = 0
+
+
 class SettingsCB(CallbackData, prefix="settings"):
-    action: str  # "time", "stores"
+    action: str  # "time", "stores", "calc_params", "days_threshold", "group_thresholds", "refill_reserve", "refill_period", "warehouse_distrib"
 
 
 class NavCB(CallbackData, prefix="nav"):
@@ -30,17 +36,12 @@ class CompareCB(CallbackData, prefix="cmp"):
     store_id: int = 0
 
 
+class CompareModeCB(CallbackData, prefix="cmpmode"):
+    action: str  # "pair" | "summary"
+
+
 class SubscribeCB(CallbackData, prefix="sub"):
     action: str  # "toggle"
-
-
-# === Helpers ===
-
-def store_display_name(store: dict) -> str:
-    """'Бренд (ИП)' если задано marketplace_name, иначе просто name."""
-    legal = store.get('name') or f"Магазин #{store['id']}"
-    brand = store.get('marketplace_name')
-    return f"{brand} ({legal})" if brand else legal
 
 
 # === Keyboard Builders ===
@@ -125,6 +126,10 @@ def settings_kb(current_time: str = "09:00", is_subscribed: bool = False) -> Inl
             callback_data=SettingsCB(action="calc_params").pack()
         )],
         [InlineKeyboardButton(
+            text="🏭 Склады поставок",
+            callback_data=SettingsCB(action="warehouse_distrib").pack()
+        )],
+        [InlineKeyboardButton(
             text="🏪 Управление магазинами",
             callback_data=SettingsCB(action="stores").pack()
         )],
@@ -139,16 +144,31 @@ def settings_kb(current_time: str = "09:00", is_subscribed: bool = False) -> Inl
     ])
 
 
-def calc_params_kb(days_n: int = 7, threshold_a: float = 4.0, threshold_b: float = 0.5) -> InlineKeyboardMarkup:
+def calc_params_kb(
+    days_n: int = 7,
+    threshold_a: float = 4.0,
+    threshold_b: float = 0.5,
+    threshold_c: float = 0.2,
+    refill_reserve_pct: int = 20,
+    refill_period_days: int = 30,
+) -> InlineKeyboardMarkup:
     """Подменю параметров расчёта."""
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(
-            text=f"📅 Порог дней: {days_n}",
+            text=f"📅 Порог повышения цены: {days_n}д",
             callback_data=SettingsCB(action="days_threshold").pack()
         )],
         [InlineKeyboardButton(
-            text=f"📦 Группы: A≥{threshold_a} · B≥{threshold_b}",
+            text=f"📦 Границы групп: A≥{threshold_a} · B≥{threshold_b} · D<{threshold_c}",
             callback_data=SettingsCB(action="group_thresholds").pack()
+        )],
+        [InlineKeyboardButton(
+            text=f"➕ Запас пополнения остатков: {refill_reserve_pct}%",
+            callback_data=SettingsCB(action="refill_reserve").pack()
+        )],
+        [InlineKeyboardButton(
+            text=f"📆 Срок расчёта объёма: {refill_period_days}д",
+            callback_data=SettingsCB(action="refill_period").pack()
         )],
         [InlineKeyboardButton(
             text="← Назад",
@@ -157,20 +177,50 @@ def calc_params_kb(days_n: int = 7, threshold_a: float = 4.0, threshold_b: float
     ])
 
 
-def store_management_kb(stores: list) -> InlineKeyboardMarkup:
-    """Управление магазинами: список + добавить."""
+_STORE_PAGE_SIZE = 5
+
+
+def store_management_kb(stores: list, page: int = 0) -> InlineKeyboardMarkup:
+    """Управление магазинами: список с пагинацией + добавить."""
+    total = len(stores)
+    total_pages = max(1, (total + _STORE_PAGE_SIZE - 1) // _STORE_PAGE_SIZE)
+    page = max(0, min(page, total_pages - 1))
+    page_stores = stores[page * _STORE_PAGE_SIZE:(page + 1) * _STORE_PAGE_SIZE]
+
     buttons = []
-    for s in stores:
+    for s in page_stores:
+        buttons.append([InlineKeyboardButton(
+            text=f"🏪 {store_display_name(s)}",
+            callback_data=StoreCB(action="edit_menu", store_id=s['id']).pack()
+        )])
         buttons.append([
             InlineKeyboardButton(
-                text=f"🏪 {store_display_name(s)}",
-                callback_data=StoreCB(action="edit", store_id=s['id']).pack()
+                text="✏️ Редактировать",
+                callback_data=StoreCB(action="edit_menu", store_id=s['id']).pack()
             ),
             InlineKeyboardButton(
                 text="❌",
                 callback_data=StoreCB(action="delete", store_id=s['id']).pack()
             ),
         ])
+
+    if total_pages > 1:
+        nav_row = []
+        if page > 0:
+            nav_row.append(InlineKeyboardButton(
+                text="◀",
+                callback_data=StorePageCB(page=page - 1).pack()
+            ))
+        nav_row.append(InlineKeyboardButton(
+            text=f"{page + 1}/{total_pages}",
+            callback_data=StorePageCB(page=page).pack()
+        ))
+        if page < total_pages - 1:
+            nav_row.append(InlineKeyboardButton(
+                text="▶",
+                callback_data=StorePageCB(page=page + 1).pack()
+            ))
+        buttons.append(nav_row)
 
     buttons.append([InlineKeyboardButton(
         text="➕ Добавить магазин",
@@ -181,6 +231,24 @@ def store_management_kb(stores: list) -> InlineKeyboardMarkup:
         callback_data=NavCB(target="settings").pack()
     )])
     return InlineKeyboardMarkup(inline_keyboard=buttons)
+
+
+def store_edit_menu_kb(store_id: int) -> InlineKeyboardMarkup:
+    """Подменю редактирования магазина: название / токен."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="📝 Торговое название",
+            callback_data=StoreCB(action="edit_name", store_id=store_id).pack()
+        )],
+        [InlineKeyboardButton(
+            text="🔑 Токен API",
+            callback_data=StoreCB(action="edit_token", store_id=store_id).pack()
+        )],
+        [InlineKeyboardButton(
+            text="← Назад к списку",
+            callback_data=NavCB(target="store_mgmt").pack()
+        )],
+    ])
 
 
 def confirm_delete_kb(store_id: int) -> InlineKeyboardMarkup:
@@ -196,6 +264,24 @@ def confirm_delete_kb(store_id: int) -> InlineKeyboardMarkup:
                 callback_data=NavCB(target="store_mgmt").pack()
             ),
         ]
+    ])
+
+
+def comparison_mode_kb() -> InlineKeyboardMarkup:
+    """Подменю режима сравнения: пара или сводный."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="🔀 Сравнение пары",
+            callback_data=CompareModeCB(action="pair").pack()
+        )],
+        [InlineKeyboardButton(
+            text="📋 Сводный отчёт",
+            callback_data=CompareModeCB(action="summary").pack()
+        )],
+        [InlineKeyboardButton(
+            text="← Назад",
+            callback_data=NavCB(target="main").pack()
+        )],
     ])
 
 
@@ -230,6 +316,16 @@ def cancel_kb() -> InlineKeyboardMarkup:
         [InlineKeyboardButton(
             text="❌ Отмена",
             callback_data=NavCB(target="main").pack()
+        )]
+    ])
+
+
+def cancel_to_store_kb() -> InlineKeyboardMarkup:
+    """Кнопка отмены (возврат к списку магазинов)."""
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(
+            text="❌ Отмена",
+            callback_data=NavCB(target="store_mgmt").pack()
         )]
     ])
 

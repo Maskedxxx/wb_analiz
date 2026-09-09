@@ -12,8 +12,9 @@ from logging.handlers import TimedRotatingFileHandler
 
 from aiogram import Bot, Dispatcher
 from aiogram.fsm.storage.memory import MemoryStorage
+from aiogram.client.session.aiohttp import AiohttpSession
 
-from bot.config import TELEGRAM_TOKEN, BOT_PASSWORD, LOGS_DIR, REPORT_RETENTION_DAYS, LOG_RETENTION_DAYS
+from bot.config import TELEGRAM_TOKEN, TELEGRAM_PROXY, BOT_PASSWORD, LOGS_DIR, REPORT_RETENTION_DAYS, LOG_RETENTION_DAYS
 from bot.handlers import register_routers
 from bot.handlers.feedback import cleanup_old_feedback
 from bot.db import init_db, cleanup_old_reports, migrate_trademarks
@@ -60,7 +61,10 @@ async def main():
         logger.info(f"Удалено устаревших отчётов: {deleted}")
 
     # Инициализация бота и диспетчера
-    bot = Bot(token=TELEGRAM_TOKEN)
+    # Прокси к Telegram: если TELEGRAM_PROXY задан — сессия через него (sing-box на Spark),
+    # иначе как раньше, напрямую. Нужен, потому что api.telegram.org из РФ блокируется.
+    session = AiohttpSession(proxy=TELEGRAM_PROXY) if TELEGRAM_PROXY else None
+    bot = Bot(token=TELEGRAM_TOKEN, session=session)
     dp = Dispatcher(storage=MemoryStorage())
 
     # Middleware авторизации

@@ -1,6 +1,7 @@
 # Секреты
 .env
 nemov_token.txt
+.mcp.json
 
 # Python
 __pycache__/

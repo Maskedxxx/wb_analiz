@@ -1,0 +1,43 @@
+# wb_analiz — демо-стандарт Spark (скил spark-deploy). Проект без HTTP: Telegram-бот,
+# поэтому нет ports, нет туннеля tuna, healthcheck по файлу /tmp/health (бот обновляет его сам).
+# Демо = ссылка на бота в Telegram. Запуск: cd deploy && docker compose up -d --build.
+name: wb-demo
+
+# Ротация логов Docker (файловые логи бота — отдельно, в ../logs, ротирует сам бот)
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  bot:
+    build:
+      context: ..                       # корень репозитория
+      dockerfile: Dockerfile            # Dockerfile проекта (non-root botuser)
+    image: wb-demo-bot:demo
+    container_name: wb-demo-bot
+    env_file: .env                      # TELEGRAM_TOKEN демо-бота, WB_TOKEN, BOT_PASSWORD, CHAT_ID, TELEGRAM_PROXY
+    environment:
+      FEEDBACK_DIR: /app/feedback
+      REPORTS_DIR: /app/reports
+      DB_PATH: /app/data/bot.db
+      LOGS_DIR: /app/logs
+    volumes:                            # существующие папки проекта (решение владельца)
+      - ../data:/app/data
+      - ../reports:/app/reports
+      - ../feedback:/app/feedback
+      - ../logs:/app/logs
+    deploy:
+      resources:
+        limits:
+          memory: ${MEM_LIMIT:-512m}
+    restart: "no"                       # поднимает только лаунчер или владелец
+    stop_grace_period: 10s
+    logging: *logging
+    healthcheck:                        # бот трогает /tmp/health из планировщика; старше 10 мин = мёртв
+      test: ["CMD-SHELL", "python -c \"import os,time; assert time.time()-os.path.getmtime('/tmp/health')<600\""]
+      interval: 60s
+      timeout: 5s
+      retries: 3
+      start_period: 30s

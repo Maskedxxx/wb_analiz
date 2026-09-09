@@ -8,6 +8,7 @@ from zoneinfo import ZoneInfo
 # Токены и ID
 TELEGRAM_TOKEN = os.getenv('TELEGRAM_TOKEN')
 CHAT_ID = os.getenv('CHAT_ID')  # ID чата заказчика
+TELEGRAM_PROXY = os.getenv('TELEGRAM_PROXY', '')  # прокси к api.telegram.org (из РФ блокируется); пусто = напрямую
 
 # Авторизация
 BOT_PASSWORD = os.getenv('BOT_PASSWORD', '')

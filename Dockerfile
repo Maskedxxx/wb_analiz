@@ -10,7 +10,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 RUN groupadd -r botuser && useradd -r -g botuser -d /app -s /sbin/nologin botuser
 
 # Копируем код
-COPY wb_api.py .
 COPY bot/ bot/
 
 # Создаём директории и даём права ДО смены пользователя
